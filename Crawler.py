@@ -10,27 +10,48 @@ proxies = {
     #'http': "socks5://127.0.0.1:1080",
     #'https': "socks5://127.0.0.1:1080"
 }
-
 gErrCnt = 0
 gLock = threading.Lock()
+quan = []
+def write_str(quan_str):
+    with open('D:\\IMG\\addr.txt', 'a')as f:
+        f.write(quan_str)
+        f.close()
+def getTree2(urladr):
+    global gErrCnt
+    header = {
+        "Accept-Language": "zh-CN,zh;q=0.8,en;q=0.6",
+    }
+    try:
+        r = requests.get(url=urladr,headers = header,proxies=proxies, verify=False,timeout=60)
+        tree = html.fromstring(r.text)
+        return tree
+    except:
+        gLock.acquire()
+        gErrCnt = gErrCnt + 1
+        gLock.release()
 
 def getTree(urladr):
-    r = requests.get(url=urladr,proxies=proxies, verify=False)
-    tree = html.fromstring(r.text)
-    return tree
+    global gErrCnt
+    try:
+        r = requests.get(url=urladr,proxies=proxies, verify=False,timeout=60)
+        tree = html.fromstring(r.text)
+        return tree
+    except:
+        gLock.acquire()
+        gErrCnt = gErrCnt + 1
+        gLock.release()
 
 def get_and_save_image(image, s):
     picLink = image.get('src')
     if picLink:
         pi = requests.get(picLink,timeout=60,proxies=proxies, verify=False)
         pic = pi.content
-        with open(picpath + s + '.jpg', 'wb')as f:
+        with open('D:\\IMG\\' + s + '.jpg', 'wb')as f:
             f.write(pic)
-def get_page(urladress,cur):
+            f.close()
+def get_page(urladress):
     global gErrCnt
-    header = {
-        "Accept-Language": "zh-CN,zh;q=0.8,en;q=0.6",
-    }
     tr = getTree(urladress)
     #得到主页面小图片的URL地址
     atables = tr.xpath("//a[@class='movie-box']")
@@ -48,20 +69,24 @@ def get_page(urladress,cur):
                 if href:
                     if href.split('/')[-1] == mas[1].text:
                         downPageUrl = href
-            print(downPageUrl)
+            print('下载: ' + downPageUrl)
             #打开下载页面
-            rr = requests.get(url=downPageUrl,headers = header,proxies=proxies, verify=False)
-            downpageTree = html.fromstring(rr.text)
+            downpageTree = getTree2(downPageUrl)
+
+            #downpageTree = getTree2('https://btso.pw/search/ULT-129')
             #得到class=row的超链接
             downurls = downpageTree.xpath("//div[@class='row']/a")
             if downurls:
+                quan.append(mas[1].text)
+                addrs = []
                 for downurl in downurls:
                     downhref = downurl.get('href')
-                    print("A片下载地址:"+downhref+"\n")
+                    if downhref:
+                        hh = getTree2(downhref)
+                        seed = hh.xpath("//textarea[@id='magnetLink']")
+                        addrs.append(seed[0].text)
+                quan.append(addrs)
                 images = tre.xpath("//a[@class='bigImage']/img")
-                cur.execute("INSERT INTO Aadrr VALUES('%s', 'not')" % (mas[1].text))
-                cur.commit()
-                cur.close()
                 try:
                     get_and_save_image(images[0], mas[1].text)
                 except:
@@ -76,13 +101,13 @@ class DwnClass(threading.Thread):
         self.url = url
 
     def run(self):
-        conn = sqlite3.connect('D:\\python\\db\\test.db')
-        get_page(self.url,conn)
+        get_page(self.url)
 
 if __name__ == '__main__':
+    #必须先创建数据库
+    conn = sqlite3.connect('D:\\python\\db\\test.db')
     tlist = []
-    picpath = 'D:\\IMG\\'
-    for i in range(1,3):
+    for i in range(1,2):
         adr = 'https://avmo.pw/cn/released/page/'+ str(i)
         tr = DwnClass(adr)
         tr.start()
@@ -91,3 +116,20 @@ if __name__ == '__main__':
     for i in tlist:
         i.join()
     print("err cnt : %d" % (gErrCnt))
+    s2 = ''
+    print(len(quan))
+    for li in quan:
+        if type(li) == list:
+            s1 = ''
+            for sa in li:
+                write_str(sa + '\n')
+                s1 = s1 + sa + '*'
+            #将结果存入数据库
+            conn.execute("INSERT into Aadrr(No,adrr)values(?,?)" ,(s2,s1))
+            conn.commit()
+
+        else:
+            write_str(li + '\n')
+            s2 = li
+
+    conn.close()
