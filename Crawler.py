@@ -3,6 +3,7 @@ from lxml import html
 import requests
 import threading
 import sqlite3
+import time
 requests.packages.urllib3.disable_warnings()
 proxies = {
     'http' : "http://127.0.0.1:8888",
@@ -53,6 +54,7 @@ def get_and_save_image(image, s):
 def get_page(urladress):
     global gErrCnt
     tr = getTree(urladress)
+    time.sleep(10)
     #得到主页面小图片的URL地址
     atables = tr.xpath("//a[@class='movie-box']")
     for ab in atables:
@@ -60,6 +62,7 @@ def get_page(urladress):
         if href:
             #打开每一个小图片的地址
             tre = getTree(href)
+            time.sleep(10)
             #得到编号
             mas = tre.xpath("//p/span")
             #得到该片的下载页面地址
@@ -69,30 +72,47 @@ def get_page(urladress):
                 if href:
                     if href.split('/')[-1] == mas[1].text:
                         downPageUrl = href
-            print('下载: ' + downPageUrl)
+            #print('下载: ' + downPageUrl)
             #打开下载页面
             downpageTree = getTree2(downPageUrl)
+            time.sleep(2)
 
             #downpageTree = getTree2('https://btso.pw/search/ULT-129')
             #得到class=row的超链接
-            downurls = downpageTree.xpath("//div[@class='row']/a")
+            downurls = None
+            try:
+
+                downurls = downpageTree.xpath("//div[@class='row']/a")
+            except:
+                gLock.acquire()
+                gErrCnt = gErrCnt + 1
+                gLock.release()
             if downurls:
-                quan.append(mas[1].text)
                 addrs = []
                 for downurl in downurls:
                     downhref = downurl.get('href')
                     if downhref:
                         hh = getTree2(downhref)
-                        seed = hh.xpath("//textarea[@id='magnetLink']")
-                        addrs.append(seed[0].text)
-                quan.append(addrs)
-                images = tre.xpath("//a[@class='bigImage']/img")
-                try:
-                    get_and_save_image(images[0], mas[1].text)
-                except:
+                        time.sleep(2)
+                        try:
+                            seed = hh.xpath("//textarea[@id='magnetLink']")
+                            addrs.append(seed[0].text)
+                        except:
+                            gLock.acquire()
+                            gErrCnt = gErrCnt + 1
+                            gLock.release()
+                if addrs:
                     gLock.acquire()
-                    gErrCnt = gErrCnt + 1
+                    quan.append(mas[1].text)
+                    quan.append(addrs)
                     gLock.release()
+                    images = tre.xpath("//a[@class='bigImage']/img")
+                    try:
+                        get_and_save_image(images[0], mas[1].text)
+                    except:
+                        gLock.acquire()
+                        gErrCnt = gErrCnt + 1
+                        gLock.release()
 
 
 class DwnClass(threading.Thread):
@@ -107,7 +127,7 @@ if __name__ == '__main__':
     #必须先创建数据库
     conn = sqlite3.connect('D:\\python\\db\\test.db')
     tlist = []
-    for i in range(1,2):
+    for i in range(1,5):
         adr = 'https://avmo.pw/cn/released/page/'+ str(i)
         tr = DwnClass(adr)
         tr.start()
